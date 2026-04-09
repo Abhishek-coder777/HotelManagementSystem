@@ -1,0 +1,31 @@
+HotelManagementSystem/
+├── src/
+│   ├── database/
+│   │   └── DatabaseConnection.java
+│   ├── models/
+│   │   ├── User.java
+│   │   ├── Room.java
+│   │   ├── Guest.java
+│   │   └── Booking.java
+│   ├── dao/
+│   │   ├── UserDAO.java
+│   │   ├── RoomDAO.java
+│   │   ├── GuestDAO.java
+│   │   └── BookingDAO.java
+│   ├── ui/
+│   │   ├── LoginFrame.java
+│   │   ├── DashboardFrame.java
+│   │   ├── RoomManagementPanel.java
+│   │   ├── GuestManagementPanel.java
+│   │   ├── DashboardFrame.java.bak
+│   │   ├── BookingPanel.java
+│   │   └── BillingPanel.java
+│   └── utils/
+│       └── CustomTheme.java
+├── resources/
+│   └── images/
+├── lib/
+│   └── mysql-connector-j-9.6.0.jar
+├── FIXES_APPLIED.md
+├── HotelManagementSystem.iml
+└── hotel_management.sql

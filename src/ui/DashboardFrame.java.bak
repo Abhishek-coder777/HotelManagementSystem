@@ -1,0 +1,1053 @@
+// ui/DashboardFrame.java
+package ui;
+
+import dao.*;
+import models.*;
+import utils.CustomTheme;
+import javax.swing.*;
+import java.awt.*;
+import java.awt.event.*;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
+import java.util.List;
+import java.util.Timer;
+import java.util.TimerTask;
+
+public class DashboardFrame extends JFrame {
+
+    private User currentUser;
+    private JPanel contentPanel;
+    private JLabel clockLabel;
+    private JLabel statusLabel;
+    private JPanel sidebarPanel;
+    private CardLayout cardLayout;
+    private Timer clockTimer;
+    private JPanel headerPanel;
+    
+    // Dashboard widgets
+    private CustomTheme.StatsCard totalRoomsCard;
+    private CustomTheme.StatsCard availableRoomsCard;
+    private CustomTheme.StatsCard occupiedRoomsCard;
+    private CustomTheme.StatsCard todayBookingsCard;
+    private CustomTheme.StatsCard monthlyRevenueCard;
+    private CustomTheme.StatsCard activeGuestsCard;
+    
+    // DAO instances
+    private RoomDAO roomDAO;
+    private BookingDAO bookingDAO;
+    private GuestDAO guestDAO;
+    
+    private JButton[] menuButtons;
+    private String[] menuNames = {"Dashboard", "Rooms", "Guests", "Bookings", "Billing", "Reports", "Settings", "Help"};
+    private String[] menuIcons = {"📊", "🏠", "👥", "📅", "💰", "📈", "⚙️", "❓"};
+    private String[] menuPanelNames = {"dashboard", "rooms", "guests", "bookings", "billing", "reports", "settings", "help"};
+    
+    public DashboardFrame(User user) {
+        this.currentUser = user;
+        this.roomDAO = new RoomDAO();
+        this.bookingDAO = new BookingDAO();
+        this.guestDAO = new GuestDAO();
+        initComponents();
+        startClock();
+        loadDashboardData();
+        SwingUtilities.invokeLater(() -> setVisible(true));
+    }
+    
+    private void initComponents() {
+        setTitle("Hotel Management System - Dashboard");
+        setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
+        setExtendedState(JFrame.MAXIMIZED_BOTH);
+        setMinimumSize(new Dimension(1200, 700));
+        setLocationRelativeTo(null);
+        setVisible(false);
+        
+        // Main container
+        JPanel mainContainer = new JPanel(new BorderLayout());
+        mainContainer.setBackground(CustomTheme.BACKGROUND_COLOR);
+        
+        // Header
+        mainContainer.add(createHeader(), BorderLayout.NORTH);
+        
+        // Sidebar and content
+        JSplitPane splitPane = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT,
+                createSidebar(), createContentArea());
+        splitPane.setDividerLocation(280);
+        splitPane.setDividerSize(0);
+        splitPane.setBorder(null);
+        
+        mainContainer.add(splitPane, BorderLayout.CENTER);
+        mainContainer.add(createStatusBar(), BorderLayout.SOUTH);
+        
+        add(mainContainer);
+    }
+    }
+    
+    private JPanel createHeader() {
+        headerPanel = new CustomTheme.GradientPanel(CustomTheme.PRIMARY_COLOR, CustomTheme.SECONDARY_COLOR);
+        headerPanel.setLayout(new BorderLayout());
+        headerPanel.setPreferredSize(new Dimension(getWidth(), 80));
+        
+        // Logo section
+        JPanel logoPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 20, 15));
+        logoPanel.setOpaque(false);
+        
+        JLabel logoLabel = new JLabel("🏨");
+        logoLabel.setFont(new Font("Segoe UI", Font.PLAIN, 36));
+        logoLabel.setForeground(Color.WHITE);
+        logoPanel.add(logoLabel);
+        
+        JLabel titleLabel = new JLabel("Grand Hotel Management");
+        titleLabel.setFont(CustomTheme.TITLE_FONT);
+        titleLabel.setForeground(Color.WHITE);
+        logoPanel.add(titleLabel);
+        
+        headerPanel.add(logoPanel, BorderLayout.WEST);
+        
+        // Right section
+        JPanel rightPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 20, 15));
+        rightPanel.setOpaque(false);
+        
+        // Clock
+        clockLabel = new JLabel();
+        clockLabel.setFont(CustomTheme.HEADER_FONT);
+        clockLabel.setForeground(Color.WHITE);
+        rightPanel.add(clockLabel);
+        
+        // User info
+        JPanel userPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 10, 0));
+        userPanel.setOpaque(false);
+        
+        JLabel userIcon = new JLabel("👤");
+        userIcon.setFont(new Font("Segoe UI", Font.PLAIN, 22));
+        userPanel.add(userIcon);
+        
+        JLabel userNameLabel = new JLabel(currentUser.getFullName());
+        userNameLabel.setFont(CustomTheme.NORMAL_FONT);
+        userNameLabel.setForeground(Color.WHITE);
+        userPanel.add(userNameLabel);
+        
+        JLabel roleLabel = new JLabel("(" + currentUser.getRole() + ")");
+        roleLabel.setFont(CustomTheme.SMALL_FONT);
+        roleLabel.setForeground(new Color(255, 255, 255, 200));
+        userPanel.add(roleLabel);
+        
+        rightPanel.add(userPanel);
+        
+        // Notification button
+        CustomTheme.ModernButton notifyBtn = new CustomTheme.ModernButton("🔔", new Color(255, 255, 255, 50));
+        notifyBtn.setFont(new Font("Segoe UI", Font.PLAIN, 16));
+        notifyBtn.setPreferredSize(new Dimension(45, 45));
+        notifyBtn.addActionListener(e -> showNotifications());
+        rightPanel.add(notifyBtn);
+        
+        headerPanel.add(rightPanel, BorderLayout.EAST);
+        
+        return headerPanel;
+    }
+    
+    private JPanel createSidebar() {
+        sidebarPanel = new JPanel();
+        sidebarPanel.setBackground(CustomTheme.SIDEBAR_COLOR);
+        sidebarPanel.setLayout(new BoxLayout(sidebarPanel, BoxLayout.Y_AXIS));
+        
+        sidebarPanel.add(Box.createRigidArea(new Dimension(0, 30)));
+        
+        menuButtons = new JButton[menuNames.length];
+        
+        for (int i = 0; i < menuNames.length; i++) {
+            JButton menuButton = createSidebarButton(menuIcons[i] + "  " + menuNames[i]);
+            final String panelName = menuPanelNames[i];
+            final int index = i;
+            menuButton.addActionListener(e -> {
+                cardLayout.show(contentPanel, panelName);
+                updateActiveMenu(index);
+                statusLabel.setText("Viewing: " + menuNames[index]);
+            });
+            sidebarPanel.add(menuButton);
+            sidebarPanel.add(Box.createRigidArea(new Dimension(0, 5)));
+            menuButtons[i] = menuButton;
+        }
+        
+        // Highlight dashboard button by default
+        updateActiveMenu(0);
+        
+        sidebarPanel.add(Box.createVerticalGlue());
+        
+        // Logout button
+        sidebarPanel.add(Box.createRigidArea(new Dimension(0, 20)));
+        JButton logoutButton = createSidebarButton("🚪  Logout");
+        logoutButton.addActionListener(e -> logout());
+        sidebarPanel.add(logoutButton);
+        sidebarPanel.add(Box.createRigidArea(new Dimension(0, 30)));
+        
+        return sidebarPanel;
+    }
+    
+    private JButton createSidebarButton(String text) {
+        JButton button = new JButton(text);
+        button.setFont(CustomTheme.NORMAL_FONT);
+        button.setForeground(Color.WHITE);
+        button.setBackground(CustomTheme.SIDEBAR_COLOR);
+        button.setBorder(BorderFactory.createEmptyBorder(12, 25, 12, 25));
+        button.setHorizontalAlignment(SwingConstants.LEFT);
+        button.setFocusPainted(false);
+        button.setCursor(new Cursor(Cursor.HAND_CURSOR));
+        
+        button.addMouseListener(new MouseAdapter() {
+            @Override
+            public void mouseEntered(MouseEvent e) {
+                if (button.getBackground() != CustomTheme.PRIMARY_COLOR) {
+                    button.setBackground(CustomTheme.PRIMARY_COLOR);
+                }
+            }
+            
+            @Override
+            public void mouseExited(MouseEvent e) {
+                if (button.getBackground() == CustomTheme.PRIMARY_COLOR &&
+                        !button.getText().contains("Logout")) {
+                    button.setBackground(CustomTheme.SIDEBAR_COLOR);
+                }
+            }
+        });
+        
+        return button;
+    }
+    
+    private void updateActiveMenu(int activeIndex) {
+        for (int i = 0; i < menuButtons.length; i++) {
+            if (i == activeIndex) {
+                menuButtons[i].setBackground(CustomTheme.PRIMARY_COLOR);
+            } else {
+                menuButtons[i].setBackground(CustomTheme.SIDEBAR_COLOR);
+            }
+        }
+    }
+    
+    private JPanel createContentArea() {
+        contentPanel = new JPanel();
+        cardLayout = new CardLayout();
+        contentPanel.setLayout(cardLayout);
+        contentPanel.setBackground(CustomTheme.BACKGROUND_COLOR);
+        
+        contentPanel.add(createDashboardPanel(), "dashboard");
+        contentPanel.add(new RoomManagementPanel(), "rooms");
+        contentPanel.add(new GuestManagementPanel(), "guests");
+        contentPanel.add(new BookingPanel(), "bookings");
+        contentPanel.add(new BillingPanel(), "billing");
+        contentPanel.add(createReportsPanel(), "reports");
+        contentPanel.add(createSettingsPanel(), "settings");
+        contentPanel.add(createHelpPanel(), "help");
+        
+        // Show the dashboard panel by default
+        cardLayout.show(contentPanel, "dashboard");
+        
+        return contentPanel;
+    }
+    
+    private JPanel createDashboardPanel() {
+        JPanel dashboard = new JPanel(new BorderLayout(15, 15));
+        dashboard.setBackground(CustomTheme.BACKGROUND_COLOR);
+        dashboard.setBorder(BorderFactory.createEmptyBorder(20, 20, 20, 20));
+        
+        // Welcome banner
+        CustomTheme.ShadowPanel welcomeCard = new CustomTheme.ShadowPanel(12, 3);
+        welcomeCard.setBackground(Color.WHITE);
+        welcomeCard.setLayout(new BorderLayout());
+        welcomeCard.setBorder(BorderFactory.createEmptyBorder(20, 25, 20, 25));
+        
+        JLabel welcomeLabel = new JLabel("Welcome back, " + currentUser.getFullName() + "!");
+        welcomeLabel.setFont(CustomTheme.HEADER_FONT);
+        welcomeLabel.setForeground(CustomTheme.DARK_COLOR);
+        welcomeCard.add(welcomeLabel, BorderLayout.WEST);
+        
+        JLabel dateLabel = new JLabel();
+        dateLabel.setFont(CustomTheme.NORMAL_FONT);
+        dateLabel.setForeground(CustomTheme.PRIMARY_COLOR);
+        dateLabel.setText(LocalDateTime.now().format(DateTimeFormatter.ofPattern("EEEE, dd MMMM yyyy")));
+        welcomeCard.add(dateLabel, BorderLayout.EAST);
+        
+        dashboard.add(welcomeCard, BorderLayout.NORTH);
+        
+        // Stats grid
+        JPanel statsGrid = new JPanel(new GridLayout(2, 3, 20, 20));
+        statsGrid.setOpaque(false);
+        statsGrid.setBorder(BorderFactory.createEmptyBorder(20, 0, 20, 0));
+        
+        totalRoomsCard = new CustomTheme.StatsCard("🏨", "Total Rooms", CustomTheme.PRIMARY_COLOR);
+        availableRoomsCard = new CustomTheme.StatsCard("✅", "Available Rooms", CustomTheme.SUCCESS_COLOR);
+        occupiedRoomsCard = new CustomTheme.StatsCard("🔴", "Occupied Rooms", CustomTheme.WARNING_COLOR);
+        todayBookingsCard = new CustomTheme.StatsCard("📅", "Today's Bookings", CustomTheme.INFO_COLOR);
+        monthlyRevenueCard = new CustomTheme.StatsCard("💰", "Monthly Revenue", CustomTheme.PRIMARY_COLOR);
+        activeGuestsCard = new CustomTheme.StatsCard("👥", "Active Guests", CustomTheme.SUCCESS_COLOR);
+        
+        statsGrid.add(totalRoomsCard);
+        statsGrid.add(availableRoomsCard);
+        statsGrid.add(occupiedRoomsCard);
+        statsGrid.add(todayBookingsCard);
+        statsGrid.add(monthlyRevenueCard);
+        statsGrid.add(activeGuestsCard);
+        
+        dashboard.add(statsGrid, BorderLayout.CENTER);
+        
+        // Bottom section
+        JPanel bottomPanel = new JPanel(new GridLayout(1, 2, 20, 20));
+        bottomPanel.setOpaque(false);
+        bottomPanel.add(createRecentBookingsPanel());
+        bottomPanel.add(createQuickActionsPanel());
+        
+        dashboard.add(bottomPanel, BorderLayout.SOUTH);
+        
+        return dashboard;
+    }
+    
+    private JPanel createRecentBookingsPanel() {
+        CustomTheme.ShadowPanel card = new CustomTheme.ShadowPanel(12, 3);
+        card.setBackground(Color.WHITE);
+        card.setLayout(new BorderLayout());
+        card.setBorder(BorderFactory.createEmptyBorder(15, 15, 15, 15));
+        
+        JLabel titleLabel = new JLabel("Recent Bookings");
+        titleLabel.setFont(CustomTheme.HEADER_FONT);
+        titleLabel.setForeground(CustomTheme.DARK_COLOR);
+        card.add(titleLabel, BorderLayout.NORTH);
+        
+        String[] columns = {"Booking ID", "Guest", "Room", "Check-in", "Status"};
+        Object[][] data = getRecentBookingsData();
+        
+        JTable table = new JTable(data, columns);
+        CustomTheme.styleTable(table);
+        
+        JScrollPane scrollPane = new JScrollPane(table);
+        scrollPane.setBorder(null);
+        CustomTheme.styleScrollPane(scrollPane);
+        
+        card.add(scrollPane, BorderLayout.CENTER);
+        
+        return card;
+    }
+    
+    private JPanel createQuickActionsPanel() {
+        CustomTheme.ShadowPanel card = new CustomTheme.ShadowPanel(12, 3);
+        card.setBackground(Color.WHITE);
+        card.setLayout(new BorderLayout());
+        card.setBorder(BorderFactory.createEmptyBorder(15, 15, 15, 15));
+        
+        JLabel titleLabel = new JLabel("Quick Actions");
+        titleLabel.setFont(CustomTheme.HEADER_FONT);
+        titleLabel.setForeground(CustomTheme.DARK_COLOR);
+        card.add(titleLabel, BorderLayout.NORTH);
+        
+        JPanel actionsPanel = new JPanel(new GridLayout(4, 1, 10, 15));
+        actionsPanel.setOpaque(false);
+        actionsPanel.setBorder(BorderFactory.createEmptyBorder(20, 10, 20, 10));
+        
+        Object[][] actions = {
+            {"➕", "New Booking", CustomTheme.PRIMARY_COLOR},
+            {"🏨", "Check-in", CustomTheme.SUCCESS_COLOR},
+            {"🚪", "Check-out", CustomTheme.WARNING_COLOR},
+            {"🏠", "Add Room", CustomTheme.INFO_COLOR}
+        };
+        
+        for (Object[] action : actions) {
+            CustomTheme.ModernButton btn = new CustomTheme.ModernButton(action[0] + "  " + action[1]);
+            btn.setBackground((Color) action[2]);
+            btn.setHorizontalAlignment(SwingConstants.LEFT);
+            
+            switch((String) action[1]) {
+                case "New Booking":
+                    btn.addActionListener(e -> showPanel("bookings"));
+                    break;
+                case "Check-in":
+                    btn.addActionListener(e -> showCheckInDialog());
+                    break;
+                case "Check-out":
+                    btn.addActionListener(e -> showCheckOutDialog());
+                    break;
+                case "Add Room":
+                    btn.addActionListener(e -> showPanel("rooms"));
+                    break;
+                default:
+                    break;
+            }
+            
+            actionsPanel.add(btn);
+        }
+        
+        card.add(actionsPanel, BorderLayout.CENTER);
+        
+        return card;
+    }
+    
+    private JPanel createReportsPanel() {
+        JPanel panel = new JPanel(new BorderLayout(15, 15));
+        panel.setBackground(CustomTheme.BACKGROUND_COLOR);
+        panel.setBorder(BorderFactory.createEmptyBorder(20, 20, 20, 20));
+        
+        JPanel headerPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 10, 0));
+        headerPanel.setOpaque(false);
+        
+        JLabel titleIcon = new JLabel("📈");
+        titleIcon.setFont(new Font("Segoe UI", Font.PLAIN, 32));
+        headerPanel.add(titleIcon);
+        
+        JLabel titleLabel = new JLabel("Reports & Analytics");
+        titleLabel.setFont(CustomTheme.HEADER_FONT);
+        titleLabel.setForeground(CustomTheme.DARK_COLOR);
+        headerPanel.add(titleLabel);
+        
+        panel.add(headerPanel, BorderLayout.NORTH);
+        
+        JPanel cardsPanel = new JPanel(new GridLayout(2, 3, 20, 20));
+        cardsPanel.setOpaque(false);
+        cardsPanel.setBorder(BorderFactory.createEmptyBorder(20, 0, 20, 0));
+        
+        String[][] reports = {
+            {"📊", "Occupancy Report", "View room occupancy rates and trends", "#1976D2"},
+            {"💰", "Revenue Report", "Track daily, weekly, monthly revenue", "#388E3C"},
+            {"👥", "Guest Report", "Guest demographics and visit history", "#F57C00"},
+            {"📅", "Booking Report", "Booking trends and source analysis", "#7B1FA2"},
+            {"🏠", "Room Performance", "Revenue per room type and ratings", "#C2185B"},
+            {"💳", "Payment Report", "Payment method breakdown", "#0097A7"}
+        };
+        
+        for (String[] report : reports) {
+            CustomTheme.ShadowPanel card = new CustomTheme.ShadowPanel(12, 3);
+            card.setBackground(Color.WHITE);
+            card.setLayout(new BorderLayout(10, 10));
+            card.setBorder(BorderFactory.createEmptyBorder(20, 20, 20, 20));
+            card.setCursor(new Cursor(Cursor.HAND_CURSOR));
+            
+            JLabel icon = new JLabel(report[0]);
+            icon.setFont(new Font("Segoe UI", Font.PLAIN, 40));
+            card.add(icon, BorderLayout.NORTH);
+            
+            JLabel name = new JLabel(report[1]);
+            name.setFont(CustomTheme.HEADER_FONT);
+            name.setForeground(CustomTheme.DARK_COLOR);
+            card.add(name, BorderLayout.CENTER);
+            
+            JLabel desc = new JLabel(report[2]);
+            desc.setFont(CustomTheme.SMALL_FONT);
+            desc.setForeground(CustomTheme.GRAY_COLOR);
+            card.add(desc, BorderLayout.SOUTH);
+            
+            final String reportName = report[1];
+            card.addMouseListener(new MouseAdapter() {
+                @Override
+                public void mouseClicked(MouseEvent e) {
+                    showReportDialog(reportName);
+                }
+            });
+            
+            cardsPanel.add(card);
+        }
+        
+        panel.add(cardsPanel, BorderLayout.CENTER);
+        
+        return panel;
+    }
+    
+    private JPanel createSettingsPanel() {
+        JPanel panel = new JPanel(new BorderLayout(15, 15));
+        panel.setBackground(CustomTheme.BACKGROUND_COLOR);
+        panel.setBorder(BorderFactory.createEmptyBorder(20, 20, 20, 20));
+        
+        JPanel headerPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 10, 0));
+        headerPanel.setOpaque(false);
+        
+        JLabel titleIcon = new JLabel("⚙️");
+        titleIcon.setFont(new Font("Segoe UI", Font.PLAIN, 32));
+        headerPanel.add(titleIcon);
+        
+        JLabel titleLabel = new JLabel("Settings");
+        titleLabel.setFont(CustomTheme.HEADER_FONT);
+        titleLabel.setForeground(CustomTheme.DARK_COLOR);
+        headerPanel.add(titleLabel);
+        
+        panel.add(headerPanel, BorderLayout.NORTH);
+        
+        JPanel settingsContent = new JPanel();
+        settingsContent.setLayout(new BoxLayout(settingsContent, BoxLayout.Y_AXIS));
+        settingsContent.setOpaque(false);
+        settingsContent.setBorder(BorderFactory.createEmptyBorder(20, 0, 20, 0));
+        
+        // Profile Settings
+        settingsContent.add(createSettingsSection("👤 Profile Settings", new String[][]{
+            {"Full Name", currentUser.getFullName()},
+            {"Username", currentUser.getUsername()},
+            {"Email", currentUser.getEmail() != null ? currentUser.getEmail() : "Not set"},
+            {"Phone", currentUser.getPhone() != null ? currentUser.getPhone() : "Not set"},
+            {"Role", currentUser.getRole()}
+        }));
+        settingsContent.add(Box.createRigidArea(new Dimension(0, 15)));
+        
+        // Hotel Settings
+        settingsContent.add(createSettingsSection("🏨 Hotel Settings", new String[][]{
+            {"Hotel Name", "Grand Hotel"},
+            {"Address", "123 Luxury Avenue, Downtown City"},
+            {"Phone", "+91-1234567890"},
+            {"Email", "info@grandhotel.com"},
+            {"GST Rate", "18%"},
+            {"Check-in Time", "12:00 PM"},
+            {"Check-out Time", "11:00 AM"}
+        }));
+        settingsContent.add(Box.createRigidArea(new Dimension(0, 15)));
+        
+        // System Settings
+        settingsContent.add(createSettingsSection("🔧 System Settings", new String[][]{
+            {"Auto Refresh Interval", "30 seconds"},
+            {"Date Format", "dd/MM/yyyy"},
+            {"Currency", "INR (₹)"},
+            {"Tax Calculation", "Automatic"},
+            {"Database Status", "Connected"}
+        }));
+        
+        settingsContent.add(Box.createRigidArea(new Dimension(0, 20)));
+        
+        JPanel buttonPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 10, 0));
+        buttonPanel.setOpaque(false);
+        
+        CustomTheme.ModernButton changePasswordBtn = new CustomTheme.ModernButton("🔒 Change Password");
+        changePasswordBtn.setBackground(CustomTheme.PRIMARY_COLOR);
+        changePasswordBtn.addActionListener(e -> showChangePasswordDialog());
+        buttonPanel.add(changePasswordBtn);
+        
+        settingsContent.add(buttonPanel);
+        
+        JScrollPane scrollPane = new JScrollPane(settingsContent);
+        scrollPane.setBorder(null);
+        scrollPane.getViewport().setBackground(CustomTheme.BACKGROUND_COLOR);
+        CustomTheme.styleScrollPane(scrollPane);
+        panel.add(scrollPane, BorderLayout.CENTER);
+        
+        return panel;
+    }
+    
+    private JPanel createSettingsSection(String title, String[][] settings) {
+        CustomTheme.ShadowPanel section = new CustomTheme.ShadowPanel(12, 3);
+        section.setBackground(Color.WHITE);
+        section.setLayout(new BorderLayout());
+        section.setBorder(BorderFactory.createEmptyBorder(15, 20, 15, 20));
+        
+        JLabel sectionTitle = new JLabel(title);
+        sectionTitle.setFont(CustomTheme.HEADER_FONT);
+        sectionTitle.setForeground(CustomTheme.PRIMARY_COLOR);
+        section.add(sectionTitle, BorderLayout.NORTH);
+        
+        JPanel fieldsPanel = new JPanel(new GridLayout(settings.length, 2, 15, 12));
+        fieldsPanel.setOpaque(false);
+        fieldsPanel.setBorder(BorderFactory.createEmptyBorder(15, 0, 0, 0));
+        
+        for (String[] setting : settings) {
+            JLabel keyLabel = new JLabel(setting[0] + ":");
+            keyLabel.setFont(CustomTheme.NORMAL_FONT);
+            keyLabel.setForeground(CustomTheme.GRAY_COLOR);
+            fieldsPanel.add(keyLabel);
+            
+            JLabel valueLabel = new JLabel(setting[1]);
+            valueLabel.setFont(new Font("Segoe UI", Font.BOLD, 14));
+            valueLabel.setForeground(CustomTheme.DARK_COLOR);
+            fieldsPanel.add(valueLabel);
+        }
+        
+        section.add(fieldsPanel, BorderLayout.CENTER);
+        return section;
+    }
+    
+    private JPanel createHelpPanel() {
+        JPanel panel = new JPanel(new BorderLayout(15, 15));
+        panel.setBackground(CustomTheme.BACKGROUND_COLOR);
+        panel.setBorder(BorderFactory.createEmptyBorder(20, 20, 20, 20));
+        
+        CustomTheme.ShadowPanel card = new CustomTheme.ShadowPanel(12, 3);
+        card.setBackground(Color.WHITE);
+        card.setLayout(new BorderLayout());
+        
+        JTextArea helpText = new JTextArea();
+        helpText.setFont(CustomTheme.NORMAL_FONT);
+        helpText.setEditable(false);
+        helpText.setBackground(Color.WHITE);
+        helpText.setBorder(BorderFactory.createEmptyBorder(20, 20, 20, 20));
+        
+        String helpContent = 
+            "╔══════════════════════════════════════════════════════════════════╗\n" +
+            "║                    HOTEL MANAGEMENT SYSTEM                       ║\n" +
+            "║                          HELP GUIDE                              ║\n" +
+            "╚══════════════════════════════════════════════════════════════════╝\n\n" +
+            
+            "📊 DASHBOARD\n" +
+            "   • View key metrics and statistics at a glance\n" +
+            "   • Monitor room occupancy, revenue, and bookings\n" +
+            "   • Quick access to common operations\n\n" +
+            
+            "🏠 ROOM MANAGEMENT\n" +
+            "   • Add, edit, or delete room information\n" +
+            "   • Update room status (Available/Occupied/Maintenance/Reserved/Cleaning)\n" +
+            "   • Set room pricing and amenities\n" +
+            "   • View room availability in real-time\n\n" +
+            
+            "👥 GUEST MANAGEMENT\n" +
+            "   • Register new guests with complete details\n" +
+            "   • Update guest information and preferences\n" +
+            "   • Track guest stay history and spending\n" +
+            "   • Manage loyalty tiers (Bronze/Silver/Gold/Platinum)\n\n" +
+            
+            "📅 BOOKING MANAGEMENT\n" +
+            "   • Create new reservations\n" +
+            "   • Process check-in and check-out\n" +
+            "   • Manage cancellations with fee calculation\n" +
+            "   • Track booking status and payment\n\n" +
+            
+            "💰 BILLING & INVOICING\n" +
+            "   • Generate detailed invoices\n" +
+            "   • Process payments (Cash/Card/UPI/Bank Transfer)\n" +
+            "   • Track payment status (Pending/Partial/Paid)\n" +
+            "   • Print or email invoices\n\n" +
+            
+            "📈 REPORTS\n" +
+            "   • Generate occupancy reports\n" +
+            "   • View revenue analytics\n" +
+            "   • Track guest demographics\n" +
+            "   • Export reports for analysis\n\n" +
+            
+            "⚙️ SETTINGS\n" +
+            "   • Update profile information\n" +
+            "   • Change password\n" +
+            "   • Configure hotel settings\n" +
+            "   • System preferences\n\n" +
+            
+            "⌨️ SHORTCUT KEYS\n" +
+            "   • Ctrl + D: Dashboard\n" +
+            "   • Ctrl + R: Rooms\n" +
+            "   • Ctrl + G: Guests\n" +
+            "   • Ctrl + B: Bookings\n" +
+            "   • Esc: Close dialog\n\n" +
+            
+            "📞 SUPPORT\n" +
+            "   For technical support or inquiries:\n" +
+            "   • Email: support@grandhotel.com\n" +
+            "   • Phone: +91-1234567890\n" +
+            "   • Internal: Ext. 1001\n\n" +
+            
+            "╔══════════════════════════════════════════════════════════════════╗\n" +
+            "║              © 2024 Grand Hotel Management System                ║\n" +
+            "║                         Version 2.0                               ║\n" +
+            "╚══════════════════════════════════════════════════════════════════╝";
+        
+        helpText.setText(helpContent);
+        helpText.setFont(new Font("Monospaced", Font.PLAIN, 12));
+        
+        JScrollPane scrollPane = new JScrollPane(helpText);
+        scrollPane.setBorder(null);
+        CustomTheme.styleScrollPane(scrollPane);
+        card.add(scrollPane, BorderLayout.CENTER);
+        
+        panel.add(card, BorderLayout.CENTER);
+        
+        return panel;
+    }
+    
+    private JPanel createStatusBar() {
+        JPanel statusBar = new JPanel(new BorderLayout());
+        statusBar.setBackground(CustomTheme.SIDEBAR_COLOR);
+        statusBar.setPreferredSize(new Dimension(getWidth(), 35));
+        statusBar.setBorder(BorderFactory.createEmptyBorder(0, 20, 0, 20));
+        
+        statusLabel = new JLabel("Ready");
+        statusLabel.setFont(CustomTheme.SMALL_FONT);
+        statusLabel.setForeground(Color.WHITE);
+        statusBar.add(statusLabel, BorderLayout.WEST);
+        
+        JLabel connectionLabel = new JLabel("● Database Connected");
+        connectionLabel.setFont(CustomTheme.SMALL_FONT);
+        connectionLabel.setForeground(CustomTheme.SUCCESS_COLOR);
+        statusBar.add(connectionLabel, BorderLayout.EAST);
+        
+        return statusBar;
+    }
+    
+    private void showPanel(String panelName) {
+        cardLayout.show(contentPanel, panelName);
+    }
+    
+    private void loadDashboardData() {
+        try {
+            int[] roomStats = roomDAO.getRoomStatistics();
+            if (roomStats != null && roomStats.length >= 3) {
+                totalRoomsCard.setValue(roomStats[0]);
+                availableRoomsCard.setValue(roomStats[1]);
+                occupiedRoomsCard.setValue(roomStats[2]);
+            }
+            
+            int[] bookingStats = bookingDAO.getBookingStatistics();
+            if (bookingStats != null && bookingStats.length >= 4) {
+                todayBookingsCard.setValue(bookingStats[3]);
+            }
+            
+            double[] revenueStats = bookingDAO.getRevenueStatistics();
+            if (revenueStats != null && revenueStats.length >= 3) {
+                monthlyRevenueCard.setValue(revenueStats[2]);
+            }
+            
+            int[] guestStats = guestDAO.getGuestStatistics();
+            if (guestStats != null && guestStats.length >= 2) {
+                activeGuestsCard.setValue(guestStats[1]);
+            }
+        } catch (Exception e) {
+            System.err.println("Error loading dashboard data: " + e.getMessage());
+        }
+    }
+    
+    private Object[][] getRecentBookingsData() {
+        try {
+            List<Booking> recentBookings = bookingDAO.getAllBookings();
+            int size = Math.min(recentBookings.size(), 5);
+            Object[][] data = new Object[size][5];
+            
+            for (int i = 0; i < size; i++) {
+                Booking booking = recentBookings.get(i);
+                data[i][0] = booking.getBookingNumber();
+                String guestName = (booking.getGuest() != null)
+                        ? booking.getGuest().getFirstName() + " " + booking.getGuest().getLastName()
+                        : "N/A";
+                data[i][1] = guestName;
+                data[i][2] = (booking.getRoom() != null) ? booking.getRoom().getRoomNumber() : "N/A";
+                data[i][3] = booking.getFormattedCheckInDate();
+                data[i][4] = booking.getStatus();
+            }
+            return data;
+        } catch (Exception e) {
+            return new Object[0][5];
+        }
+    }
+    
+    private void showCheckInDialog() {
+        JDialog dialog = new JDialog(this, "Guest Check-in", true);
+        dialog.setSize(500, 350);
+        dialog.setLocationRelativeTo(this);
+        dialog.setLayout(new BorderLayout());
+        
+        CustomTheme.ShadowPanel panel = new CustomTheme.ShadowPanel(12, 3);
+        panel.setBackground(Color.WHITE);
+        panel.setLayout(new GridBagLayout());
+        panel.setBorder(BorderFactory.createEmptyBorder(30, 30, 30, 30));
+        
+        GridBagConstraints gbc = new GridBagConstraints();
+        gbc.insets = new Insets(10, 10, 10, 10);
+        gbc.fill = GridBagConstraints.HORIZONTAL;
+        
+        gbc.gridx = 0;
+        gbc.gridy = 0;
+        panel.add(new JLabel("Booking Number:"), gbc);
+        
+        gbc.gridx = 1;
+        CustomTheme.ModernTextField bookingField = new CustomTheme.ModernTextField(20);
+        bookingField.setPreferredSize(new Dimension(200, 40));
+        panel.add(bookingField, gbc);
+        
+        gbc.gridx = 0;
+        gbc.gridy = 1;
+        gbc.gridwidth = 2;
+        CustomTheme.ModernButton checkInButton = new CustomTheme.ModernButton("Process Check-in");
+        checkInButton.setBackground(CustomTheme.SUCCESS_COLOR);
+        checkInButton.addActionListener(e -> {
+            String bookingNumber = bookingField.getText();
+            try {
+                Booking booking = bookingDAO.getBookingByNumber(bookingNumber);
+                if (booking != null && booking.getStatus().equals(Booking.STATUS_CONFIRMED)) {
+                    if (bookingDAO.checkIn(booking.getBookingId())) {
+                        JOptionPane.showMessageDialog(dialog, "Check-in successful!");
+                        dialog.dispose();
+                        loadDashboardData();
+                    } else {
+                        JOptionPane.showMessageDialog(dialog, "Check-in failed!");
+                    }
+                } else {
+                    JOptionPane.showMessageDialog(dialog, "Invalid booking number or booking not confirmed!");
+                }
+            } catch (Exception ex) {
+                JOptionPane.showMessageDialog(dialog, "Error: " + ex.getMessage());
+            }
+        });
+        panel.add(checkInButton, gbc);
+        
+        dialog.add(panel, BorderLayout.CENTER);
+        dialog.setVisible(true);
+    }
+    
+    private void showCheckOutDialog() {
+        JDialog dialog = new JDialog(this, "Guest Check-out", true);
+        dialog.setSize(500, 400);
+        dialog.setLocationRelativeTo(this);
+        dialog.setLayout(new BorderLayout());
+        
+        CustomTheme.ShadowPanel panel = new CustomTheme.ShadowPanel(12, 3);
+        panel.setBackground(Color.WHITE);
+        panel.setLayout(new GridBagLayout());
+        panel.setBorder(BorderFactory.createEmptyBorder(30, 30, 30, 30));
+        
+        GridBagConstraints gbc = new GridBagConstraints();
+        gbc.insets = new Insets(10, 10, 10, 10);
+        gbc.fill = GridBagConstraints.HORIZONTAL;
+        
+        gbc.gridx = 0;
+        gbc.gridy = 0;
+        panel.add(new JLabel("Booking Number:"), gbc);
+        
+        gbc.gridx = 1;
+        CustomTheme.ModernTextField bookingField = new CustomTheme.ModernTextField(20);
+        bookingField.setPreferredSize(new Dimension(200, 40));
+        panel.add(bookingField, gbc);
+        
+        gbc.gridx = 0;
+        gbc.gridy = 1;
+        gbc.gridwidth = 2;
+        CustomTheme.ModernButton checkOutButton = new CustomTheme.ModernButton("Process Check-out");
+        checkOutButton.setBackground(CustomTheme.WARNING_COLOR);
+        checkOutButton.addActionListener(e -> {
+            String bookingNumber = bookingField.getText();
+            try {
+                Booking booking = bookingDAO.getBookingByNumber(bookingNumber);
+                if (booking != null && booking.getStatus().equals(Booking.STATUS_CHECKED_IN)) {
+                    int confirm = JOptionPane.showConfirmDialog(dialog,
+                        "Total Amount: ₹" + String.format("%.2f", booking.getTotalAmount()) +
+                        "\nPaid: ₹" + String.format("%.2f", booking.getPaidAmount()) +
+                        "\nDue: ₹" + String.format("%.2f", booking.getDueAmount()) +
+                        "\n\nProceed with check-out?",
+                        "Confirm Check-out",
+                        JOptionPane.YES_NO_OPTION);
+                    
+                    if (confirm == JOptionPane.YES_OPTION) {
+                        if (bookingDAO.checkOut(booking.getBookingId())) {
+                            JOptionPane.showMessageDialog(dialog, "Check-out successful!");
+                            dialog.dispose();
+                            loadDashboardData();
+                        } else {
+                            JOptionPane.showMessageDialog(dialog, "Check-out failed!");
+                        }
+                    }
+                } else {
+                    JOptionPane.showMessageDialog(dialog, "Invalid booking number or guest not checked in!");
+                }
+            } catch (Exception ex) {
+                JOptionPane.showMessageDialog(dialog, "Error: " + ex.getMessage());
+            }
+        });
+        panel.add(checkOutButton, gbc);
+        
+        dialog.add(panel, BorderLayout.CENTER);
+        dialog.setVisible(true);
+    }
+    
+    private void showReportDialog(String reportName) {
+        StringBuilder report = new StringBuilder();
+        report.append("╔══════════════════════════════════════════════════════════════════╗\n");
+        report.append("║                    ").append(String.format("%-40s", reportName.toUpperCase())).append("║\n");
+        report.append("╚══════════════════════════════════════════════════════════════════╝\n\n");
+        report.append("Generated: ").append(LocalDateTime.now().format(DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm:ss"))).append("\n\n");
+        
+        try {
+            switch (reportName) {
+                case "Occupancy Report":
+                    int[] roomStats = roomDAO.getRoomStatistics();
+                    if (roomStats != null && roomStats.length >= 3) {
+                        report.append("Total Rooms: ").append(roomStats[0]).append("\n");
+                        report.append("Available Rooms: ").append(roomStats[1]).append("\n");
+                        report.append("Occupied Rooms: ").append(roomStats[2]).append("\n");
+                        double occupancy = roomStats[0] > 0 ? (roomStats[2] * 100.0 / roomStats[0]) : 0;
+                        report.append(String.format("Occupancy Rate: %.1f%%\n", occupancy));
+                    }
+                    break;
+                case "Revenue Report":
+                    double[] revenueStats = bookingDAO.getRevenueStatistics();
+                    if (revenueStats != null && revenueStats.length >= 3) {
+                        report.append(String.format("Total Revenue: ₹%,.2f\n", revenueStats[0]));
+                        report.append(String.format("Today's Revenue: ₹%,.2f\n", revenueStats[1]));
+                        report.append(String.format("Monthly Revenue: ₹%,.2f\n", revenueStats[2]));
+                        report.append(String.format("Yearly Revenue: ₹%,.2f\n", revenueStats[3]));
+                    }
+                    break;
+                case "Guest Report":
+                    int[] guestStats = guestDAO.getGuestStatistics();
+                    if (guestStats != null && guestStats.length >= 2) {
+                        report.append("Total Guests: ").append(guestStats[0]).append("\n");
+                        report.append("Active Guests: ").append(guestStats[1]).append("\n");
+                        report.append("VIP Guests: ").append(guestStats[2]).append("\n");
+                    }
+                    break;
+                case "Booking Report":
+                    int[] bookingStats = bookingDAO.getBookingStatistics();
+                    if (bookingStats != null && bookingStats.length >= 4) {
+                        report.append("Total Bookings: ").append(bookingStats[0]).append("\n");
+                        report.append("Confirmed: ").append(bookingStats[2]).append("\n");
+                        report.append("Checked-in: ").append(bookingStats[3]).append("\n");
+                        report.append("Cancelled: ").append(bookingStats[5]).append("\n");
+                    }
+                    break;
+                default:
+                    report.append("Report data loading...\n");
+                    break;
+            }
+        } catch (Exception e) {
+            report.append("Error loading report data: ").append(e.getMessage()).append("\n");
+        }
+        
+        report.append("\n╔══════════════════════════════════════════════════════════════════╗\n");
+        report.append("║                         End of Report                              ║\n");
+        report.append("╚══════════════════════════════════════════════════════════════════╝\n");
+        
+        JTextArea reportArea = new JTextArea(report.toString());
+        reportArea.setFont(new Font("Monospaced", Font.PLAIN, 12));
+        reportArea.setEditable(false);
+        reportArea.setBackground(Color.WHITE);
+        reportArea.setBorder(BorderFactory.createEmptyBorder(15, 15, 15, 15));
+        
+        JScrollPane scrollPane = new JScrollPane(reportArea);
+        scrollPane.setPreferredSize(new Dimension(600, 450));
+        CustomTheme.styleScrollPane(scrollPane);
+        
+        JOptionPane.showMessageDialog(this, scrollPane, reportName, JOptionPane.PLAIN_MESSAGE);
+    }
+    
+    private void showChangePasswordDialog() {
+        JDialog dialog = new JDialog(this, "Change Password", true);
+        dialog.setSize(450, 350);
+        dialog.setLocationRelativeTo(this);
+        dialog.setLayout(new BorderLayout());
+        
+        CustomTheme.ShadowPanel formPanel = new CustomTheme.ShadowPanel(12, 3);
+        formPanel.setBackground(Color.WHITE);
+        formPanel.setLayout(new GridBagLayout());
+        formPanel.setBorder(BorderFactory.createEmptyBorder(30, 30, 30, 30));
+        
+        GridBagConstraints gbc = new GridBagConstraints();
+        gbc.insets = new Insets(10, 10, 10, 10);
+        gbc.fill = GridBagConstraints.HORIZONTAL;
+        
+        gbc.gridx = 0;
+        gbc.gridy = 0;
+        formPanel.add(new JLabel("Current Password:"), gbc);
+        gbc.gridx = 1;
+        JPasswordField currentPass = new CustomTheme.ModernPasswordField(15);
+        formPanel.add(currentPass, gbc);
+        
+        gbc.gridx = 0;
+        gbc.gridy = 1;
+        formPanel.add(new JLabel("New Password:"), gbc);
+        gbc.gridx = 1;
+        JPasswordField newPass = new CustomTheme.ModernPasswordField(15);
+        formPanel.add(newPass, gbc);
+        
+        gbc.gridx = 0;
+        gbc.gridy = 2;
+        formPanel.add(new JLabel("Confirm Password:"), gbc);
+        gbc.gridx = 1;
+        JPasswordField confirmPass = new CustomTheme.ModernPasswordField(15);
+        formPanel.add(confirmPass, gbc);
+        
+        dialog.add(formPanel, BorderLayout.CENTER);
+        
+        JPanel buttonPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 10, 10));
+        buttonPanel.setBorder(BorderFactory.createEmptyBorder(10, 10, 20, 20));
+        buttonPanel.setBackground(Color.WHITE);
+        
+        CustomTheme.ModernButton saveBtn = new CustomTheme.ModernButton("Save", CustomTheme.SUCCESS_COLOR);
+        saveBtn.addActionListener(e -> {
+            String newPassword = new String(newPass.getPassword());
+            String confirmPassword = new String(confirmPass.getPassword());
+            if (newPassword.isEmpty()) {
+                JOptionPane.showMessageDialog(dialog, "Password cannot be empty!");
+            } else if (!newPassword.equals(confirmPassword)) {
+                JOptionPane.showMessageDialog(dialog, "Passwords do not match!");
+            } else if (newPassword.length() < 6) {
+                JOptionPane.showMessageDialog(dialog, "Password must be at least 6 characters!");
+            } else {
+                JOptionPane.showMessageDialog(dialog, "Password changed successfully!");
+                dialog.dispose();
+            }
+        });
+        
+        CustomTheme.ModernButton cancelBtn = new CustomTheme.ModernButton("Cancel", CustomTheme.DANGER_COLOR);
+        cancelBtn.addActionListener(e -> dialog.dispose());
+        
+        buttonPanel.add(saveBtn);
+        buttonPanel.add(cancelBtn);
+        dialog.add(buttonPanel, BorderLayout.SOUTH);
+        
+        dialog.setVisible(true);
+    }
+    
+    private void showNotifications() {
+        java.util.List<String> notifications = new java.util.ArrayList<>();
+        
+        try {
+            java.util.List<Booking> todayCheckIns = bookingDAO.getTodayCheckIns();
+            if (todayCheckIns != null && !todayCheckIns.isEmpty()) {
+                notifications.add("📅 " + todayCheckIns.size() + " guest(s) checking in today");
+            }
+            
+            java.util.List<Booking> todayCheckOuts = bookingDAO.getTodayCheckOuts();
+            if (todayCheckOuts != null && !todayCheckOuts.isEmpty()) {
+                notifications.add("🚪 " + todayCheckOuts.size() + " guest(s) checking out today");
+            }
+            
+            int[] roomStats = roomDAO.getRoomStatistics();
+            if (roomStats != null && roomStats.length > 1 && roomStats[1] < 5) {
+                notifications.add("⚠️ Low room availability! Only " + roomStats[1] + " rooms left");
+            }
+        } catch (Exception e) {
+            notifications.add("⚠️ Could not load notifications");
+        }
+        
+        if (notifications.isEmpty()) {
+            notifications.add("✓ No new notifications");
+        }
+        
+        String message = String.join("\n", notifications);
+        JOptionPane.showMessageDialog(this, message, "Notifications", JOptionPane.INFORMATION_MESSAGE);
+    }
+    
+    private void startClock() {
+        clockTimer = new Timer();
+        clockTimer.scheduleAtFixedRate(new TimerTask() {
+            @Override
+            public void run() {
+                SwingUtilities.invokeLater(() -> {
+                    LocalDateTime now = LocalDateTime.now();
+                    String time = now.format(DateTimeFormatter.ofPattern("hh:mm:ss a"));
+                    String date = now.format(DateTimeFormatter.ofPattern("dd/MM/yyyy"));
+                    if (clockLabel != null) {
+                        clockLabel.setText(date + "  |  " + time);
+                    }
+                });
+            }
+        }, 0, 1000);
+    }
+    
+    private void logout() {
+        int confirm = JOptionPane.showConfirmDialog(this,
+            "Are you sure you want to logout?",
+            "Logout",
+            JOptionPane.YES_NO_OPTION,
+            JOptionPane.QUESTION_MESSAGE);
+        
+        if (confirm == JOptionPane.YES_OPTION) {
+            if (clockTimer != null) {
+                clockTimer.cancel();
+            }
+            dispose();
+            new LoginFrame().setVisible(true);
+        }
+    }
+    
+    @Override
+    public void dispose() {
+        if (clockTimer != null) {
+            clockTimer.cancel();
+        }
+        super.dispose();
+    }
+}
+        super.dispose();
+    }
+}
