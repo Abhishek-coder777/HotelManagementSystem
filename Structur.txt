@@ -17,15 +17,14 @@ HotelManagementSystem/
 │   │   ├── DashboardFrame.java
 │   │   ├── RoomManagementPanel.java
 │   │   ├── GuestManagementPanel.java
-│   │   ├── DashboardFrame.java.bak
 │   │   ├── BookingPanel.java
 │   │   └── BillingPanel.java
 │   └── utils/
-│       └── CustomTheme.java
+│       ├── CustomTheme.java
+│       └── ImageUtils.java
 ├── resources/
 │   └── images/
 ├── lib/
 │   └── mysql-connector-j-9.6.0.jar
-├── FIXES_APPLIED.md
 ├── HotelManagementSystem.iml
 └── hotel_management.sql
